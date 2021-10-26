@@ -1,0 +1,99 @@
+create table GENERIC_NODE (
+	id int primary key identity(1,1), -- start at 1, increment by 1
+	node_stuff varchar(max) not null
+)
+go
+
+create table GENERIC_VERTEX (
+	id int primary key identity(1,1),
+	from_node int not null references GENERIC_NODE,
+	to_node int not null references GENERIC_NODE,
+	vertex_stuff varchar(max) not null default ''
+)
+go
+
+insert into GENERIC_NODE(node_stuff) values ('A')
+insert into GENERIC_NODE(node_stuff) values ('B')
+insert into GENERIC_NODE(node_stuff) values ('C')
+insert into GENERIC_NODE(node_stuff) values ('D')
+-- shortcut function.  Need a different approach if "@stuff" isn't unique
+go
+
+create or alter function GetNodeId(@stuff varchar(max))
+returns int
+as begin
+	return (select id from GENERIC_NODE where node_stuff = @stuff)
+end
+go
+
+insert into GENERIC_VERTEX(from_node, to_node) select dbo.GetNodeId('A'), dbo.GetNodeId('B')
+insert into GENERIC_VERTEX(from_node, to_node) select dbo.GetNodeId('B'), dbo.GetNodeId('C')
+insert into GENERIC_VERTEX(from_node, to_node) select dbo.GetNodeId('B'), dbo.GetNodeId('D')
+insert into GENERIC_VERTEX(from_node, to_node) select dbo.GetNodeId('C'), dbo.GetNodeId('D')
+
+-- insert into GENERIC_VERTEX(from_node, to_node) select dbo.GetNodeId('A'), dbo.GetNodeId('D')
+
+select * from GENERIC_NODE
+select * from GENERIC_VERTEX
+go
+
+-- reachability examples
+
+-- this function operates on the node IDs, for simplicity
+-- ergo, it is GENERIC on a "graph of anything"
+create or alter function IsReachable (@from int, @to int)
+returns int -- 1 = true, 0 = false
+as begin
+	declare @returnValue int
+	select @returnValue = 0
+	with ReachableNodes as (
+		select to_node nodeId from GENERIC_VERTEX where from_node = @from
+		
+		union all
+
+		select to_node
+		from GENERIC_VERTEX G, ReachableNodes R
+		where R.nodeId = G.from_node
+
+	)
+	select distinct @returnValue = 1 
+	from ReachableNodes
+	where nodeId = @to
+
+	return @returnValue
+end
+go
+
+create or alter procedure PATH_EXISTS @fromNode varchar(max), @toNode varchar(max)
+as
+    set nocount on
+
+    -- check parameters (do nodes exist?)
+	-- remember, here we would do implementation specific things, but here it's just text
+	-- since we also need the nodeIds, let's get them
+	declare @fromId int, @toId int
+	select @fromID = id from GENERIC_NODE where node_stuff = @fromNode
+	select @toID = id from GENERIC_NODE where node_stuff = @toNode
+    if @fromId is null begin
+        print 'From node ' + @fromNode + ' does not exist.'
+        return
+    end
+    if @toId is null begin
+        print 'To node ' + @toNode + ' does not exist.'
+        return
+    end
+
+	-- now that we have Ids, we can use our function
+    if dbo.IsReachable(@fromId, @toId) = 1
+        print 'One or more paths exist from ' + @fromNode + ' to ' + @toNode + '.'
+    else
+        print 'No paths exist from ' + @fromNode + ' to ' + @toNode + '.'
+go
+
+exec PATH_EXISTS 'A', 'B'
+exec PATH_EXISTS 'A', 'C'
+exec PATH_EXISTS 'C', 'A'
+exec PATH_EXISTS 'A', 'D'
+exec PATH_EXISTS 'E', 'A'
+exec PATH_EXISTS 'A', 'A'
+go
