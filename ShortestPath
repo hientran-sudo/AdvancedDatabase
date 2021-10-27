@@ -1,0 +1,177 @@
+drop table ROUTES
+go
+
+drop table CITIES
+go
+
+create table CITIES (
+    NAME varchar(30) primary key
+)
+go
+
+create table ROUTES (
+    FROM_CITY varchar(30) references CITIES,
+    TO_CITY varchar(30) references CITIES,
+    MILES int not null,
+    primary key (from_city, to_city)
+)
+go
+
+
+insert into cities values ('New York')
+insert into cities values ('Washington')
+insert into cities values ('Miami')
+insert into cities values ('Chicago')
+insert into cities values ('Dallas')
+insert into cities values ('St. Louis')
+insert into cities values ('Phoenix')
+insert into cities values ('Denver')
+insert into cities values ('Los Angeles')
+insert into cities values ('San Francisco')
+insert into cities values ('Seattle')
+
+insert into routes values ('New York', 'Washington', 200)
+insert into routes values ('New York', 'Chicago', 700)
+insert into routes values ('Miami', 'Washington', 900)
+insert into routes values ('St. Louis', 'Washington', 700)
+insert into routes values ('St. Louis', 'Miami', 1050)
+insert into routes values ('St. Louis', 'Chicago', 250)
+insert into routes values ('St. Louis', 'Dallas', 550)
+insert into routes values ('St. Louis', 'Denver', 800)
+insert into routes values ('Chicago', 'Denver', 900)
+insert into routes values ('Seattle', 'Denver', 1000)
+insert into routes values ('San Francisco', 'Denver', 950)
+insert into routes values ('San Francisco', 'Seattle', 700)
+insert into routes values ('San Francisco', 'Los Angeles', 350)
+insert into routes values ('Phoenix', 'Los Angeles', 350)
+insert into routes values ('Phoenix', 'Dallas', 900)
+insert into routes values ('Miami', 'Dallas', 1100)
+go
+
+drop view ALL_ROUTES
+go
+
+-- because the vertexes are undirected, this view makes them seem directed
+-- having two rows would be a DENORMALIZATION!  (if we change or add one...)
+create  view ALL_ROUTES (FROM_CITY, TO_CITY, MILES) as 
+    select FROM_CITY, TO_CITY, MILES from ROUTES
+    union
+    select TO_CITY, FROM_CITY, MILES from ROUTES
+go
+
+select * from ALL_ROUTES
+
+-- validate diagram
+select FROM_CITY, count(*)
+from ALL_ROUTES
+group by FROM_CITY
+go
+
+-- continue looking here!  We can re-write our fewest hops in a single proc...
+create or alter procedure FEWEST_STOPS @fromCity varchar(30), @toCity varchar(30)
+as
+	-- our structure requires the city names to be unique, do not need Id
+	-- Also, we can shortcut to/from matches, which make no sense
+    set nocount on
+    if not exists (select * from CITIES where NAME = @fromCity) begin
+        print 'No service is offered from ' + @fromCity + '.'
+        return
+    end
+    if not exists (select * from CITIES where NAME = @toCity) begin
+        print 'No service is offered to ' + @toCity + '.'
+        return
+    end
+    if @toCity = @fromCity begin
+        print 'You can pretty much walk from ' + @fromCity + ' to ' + @toCity + '.'
+        return
+    end
+
+	declare @CityCount int = (select count(*) from cities) -- to stop iteration!
+
+	declare @minHops int
+	;with ReachableCities as (
+		select TO_CITY, 1 HOPS from ALL_ROUTES where FROM_CITY = @fromCity
+
+		union all
+
+		select A.TO_CITY, R.HOPS+1
+		from ReachableCities R, ALL_ROUTES A
+		where R.TO_CITY = A.FROM_CITY
+		and R.HOPS < @CityCount
+	)
+	--select * from ReachableCities
+	
+	select @minHops = min(hops)
+	from ReachableCities
+	where TO_CITY = @toCity
+	
+    if @minHops is not null
+        print 'You must make ' + convert(varchar, @minHops-1) + ' transfers between ' + 
+              @fromCity + ' and ' + @toCity + '.'
+    else
+        -- this should never happen!
+        print 'No trains exists from ' + @fromCity + ' to ' + @toCity + '.'
+go
+
+exec FEWEST_STOPS 'New York', 'New York'
+exec FEWEST_STOPS 'New York', 'Los Angeles'
+exec FEWEST_STOPS 'New York', 'Toledo'
+exec FEWEST_STOPS 'New York', 'Miami'
+exec FEWEST_STOPS 'Miami', 'New York'
+exec FEWEST_STOPS 'Seattle', 'Dallas'
+go
+
+
+
+-- this is a pathing problem
+-- for convenience, I've included the number of hops
+create or alter procedure SHORTEST_PATH @fromCity varchar(30), @toCity varchar(30)
+as
+    set nocount on
+    if not exists (select * from CITIES where NAME = @fromCity) begin
+        print 'No service is offered from ' + @fromCity + '.'
+        return
+    end
+    if not exists (select * from CITIES where NAME = @toCity) begin
+        print 'No service is offered to ' + @toCity + '.'
+        return
+    end
+    if @toCity = @fromCity begin
+        print 'You can pretty much walk from ' + @fromCity + ' to ' + @toCity + '.'
+        return
+    end
+
+	declare @CityCount int = (select count(*) from cities) -- to stop iteration!
+	declare @shortestPath int
+	;with ReachableCities as (
+		select TO_CITY, 1 HOPS, MILES from ALL_ROUTES where FROM_CITY = @fromCity
+
+		union all
+
+		select A.TO_CITY, R.HOPS+1, R.MILES+A.MILES
+		from ReachableCities R, ALL_ROUTES A
+		where R.TO_CITY = A.FROM_CITY
+		and R.HOPS < @CityCount
+	)
+	select @shortestPath = min(MILES)
+	from ReachableCities
+	where TO_CITY = @toCity
+
+    if @shortestPath is not null
+        print 'It is ' + convert(varchar, @shortestPath) + ' miles from ' + 
+              @fromCity + ' to ' + @toCity + '.'
+    else
+        -- this should never happen!
+        print 'No trains exists from ' + @fromCity + ' to ' + @toCity + '.'
+go
+
+
+
+
+exec SHORTEST_PATH 'New York', 'New York'
+exec SHORTEST_PATH 'New York', 'Los Angeles'
+exec SHORTEST_PATH 'New York', 'Toledo'
+exec SHORTEST_PATH 'New York', 'Miami'
+exec SHORTEST_PATH 'Miami', 'New York'
+exec SHORTEST_PATH 'Seattle', 'Dallas'
+go
