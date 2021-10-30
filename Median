@@ -1,0 +1,146 @@
+-- problem 1, difference between now and a bunch of dates
+
+
+-- I did this as a function.  It's easiest this way.
+create or alter function diffBetween2Dates(@date1 datetime,@date2 datetime)
+returns varchar(200)
+as 
+begin
+	declare @diffInMin int
+	declare @tempNum int
+	declare @years int
+	declare @months int
+	declare @days int
+	declare @hours int
+	declare @returnStatement varchar(200)
+	-- I'm not going to pretend this is perfect, but you can get odd things anywise
+	-- (get the total in minutes and subtract out the bigger things)
+	set @diffInMin = abs(datediff(mi,@date1,@date2))
+	set @years  = CONVERT(int, (@diffInMin/(60*24*365)))
+	set @tempNum  = CONVERT(int, (@diffInMin%(60*24*365)))
+	set @months = CONVERT(int, (@tempNum/((60*24*365)/12)))
+	set @tempNum = CONVERT(int, (@tempNum%((60*24*365)/12)))
+	set @days = CONVERT(int, (@tempNum/(60*24)))
+	set @tempNum = CONVERT(int, (@tempNum%(60*24)))
+	set @hours = @tempNum/60
+	set @tempNum = @tempNum%60
+	-- now you have the numbers, build the string
+	set @returnStatement = ''
+	if @years > 0
+		BEGIN
+			set @returnStatement =  @returnStatement + cast(@years as varchar) + ' Years, '
+		END
+	if @months > 0
+		BEGIN
+			set @returnStatement =  @returnStatement + cast(@months as varchar) + ' Months, ' 
+		END
+	if @days > 0
+		BEGIN
+			set @returnStatement =  @returnStatement + cast(@days as varchar) + ' Days, '
+		END
+	if @hours > 0
+		BEGIN
+			set @returnStatement =  @returnStatement +  cast(@hours as varchar) + ' Hours, '
+		END
+	if @tempNum > 0
+	   BEGIN
+			set @returnStatement =  @returnStatement + cast(@tempNum as varchar) + ' Minutes'
+	   END
+	   if substring(@returnStatement, len(@returnStatement), 1) = ','
+			set @returnStatement = substring(@returnStatement, 1, len(@returnStatement)-1)
+	return @returnStatement
+end
+go
+
+-- test it
+select dbo.diffBetween2Dates(sysdatetime(), sysutcdatetime())
+select dbo.diffBetween2Dates(sysdatetime(), '7/4/2021 8:00')
+select dbo.diffBetween2Dates('7/13/1971 12:30', sysdatetime())
+select dbo.diffBetween2Dates('12/31/2020 23:59', '1/1/2021 00:01')
+select dbo.diffBetween2Dates('2/1/2020', '3/1/2020')
+select dbo.diffBetween2Dates('2/1/2019', '3/3/2020')
+select dbo.diffBetween2Dates('3/3/2020', '2/1/2020') -- good test case, reverse parameters
+
+
+
+select distinct dbo.diffBetween2Dates(sysdatetime(), DueDate) from sales.SalesOrderHeader
+
+
+
+-- PROBLEM 2: medians
+
+-- first make some test data
+drop table testtable
+go
+
+create table testtable (
+    val1 int
+)
+go
+
+declare @i int
+set @i = 0
+while @i < 100 begin
+    insert into testtable values (ceiling(rand()*1000))
+    set @i = @i + 1
+end
+go
+
+select * from testtable
+
+
+-- this gives us an about (should be near 500)
+select avg(val1) from testtable
+order by 1
+
+
+select * from testtable
+order by 1
+
+
+-- a neat idea that only works in SQL Server:
+SELECT
+(
+(
+	SELECT MAX(val1) FROM 
+	(
+		SELECT TOP 50 PERCENT val1 FROM testtable ORDER BY val1) AS v1) 
+	+
+	(
+	SELECT MIN(val1) FROM 
+	(
+	SELECT TOP 50 PERCENT val1 FROM testtable ORDER BY val1 DESC) AS v2) 
+)
+/ 2.0 AS Median
+
+
+-- best solution (because all standard SQL):
+SELECT 
+      AVG(convert(decimal, val1))
+FROM
+	(
+		SELECT val1,
+		ROW_NUMBER() OVER (ORDER BY val1) AS RowNum,
+		COUNT(*) OVER () AS RowCnt  
+		FROM testtable
+	) X
+WHERE
+   RowNum IN ( (RowCnt + 1) / 2, (RowCnt + 2) / 2) 
+
+-- try odd number of values...
+
+
+
+with alltherows as 
+(
+		SELECT val1,
+		ROW_NUMBER() OVER (ORDER BY val1) AS RowNum,
+		COUNT(*) OVER () AS RowCnt  
+		FROM testtable
+	) 
+	
+SELECT 
+      AVG(convert(decimal, val1))
+FROM alltherows
+WHERE
+   RowNum IN ( (RowCnt + 1) / 2, (RowCnt + 2) / 2)
