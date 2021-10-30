@@ -1,0 +1,45 @@
+drop table #temp
+
+create table #temp (i int)
+go
+
+declare @i int
+set @i = 0 
+while (@i < 365) begin
+	insert #temp select @i
+	SET @i = @i + 1
+end
+
+select dateadd(d, i, '1/1/2021') 
+from #temp
+where datepart(dw, dateadd(d, i, '1/1/2021')) = 4 
+
+select row_number() over (order by name) 
+from sys.objects
+
+
+select dateadd(d, i, '1/1/2021') 
+from (
+	select row_number() over (select dateadd(d, i, '1/1/2021') 
+from #temp
+where datepart(dw, dateadd(d, i, '1/1/2021')) = 4 
+ by name) i  
+	from sys.objects
+) v
+where datepart(dw, dateadd(d, i, '1/1/2021')) = 4 
+and i < 365
+
+
+
+-- COMMON TABLE EXPRESSION
+with temp as (
+	select 0 i
+	union all
+	select i + 1
+	from temp
+	where i < 365
+)
+select dateadd(d, i, '1/1/2021') 
+from temp
+where datepart(dw, dateadd(d, i, '1/1/2021')) = 4 
+option (maxrecursion 1000)
