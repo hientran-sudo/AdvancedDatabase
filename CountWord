@@ -1,0 +1,61 @@
+
+-- the easy way uses STRING_SPLIT
+create or alter function WordCount (@string nvarchar(max))
+returns table
+as 
+	return (
+		select value word, count(*) wordCount
+		from (
+			select value from STRING_SPLIT(@string, ' ') where value <> ' '
+		) x
+		group by value
+	)
+go
+
+select * from WordCount(' smells  like teen   teen spirit   teen  teen spirit     spirit    ')
+go
+
+-- The hard way is you split your own string
+create or alter function WordCountHardWay (@string nvarchar(max))
+returns @words table (
+	word nvarchar(max),
+	wordcount int
+)
+as begin
+	declare @thisword nvarchar(max) = ''
+	
+	while len(@string) > 0 begin 
+		
+		-- skip spaces      
+		while substring(@string, 1, 1) = ' '  -- in (' ',
+			set @string = substring(@string, 2, len(@string)-1)
+		
+		-- build a word until you get to the next space
+		while substring(@string, 1, 1) != ' ' begin
+			set @thisword = @thisword + substring(@string, 1, 1)
+			set @string = substring(@string, 2, len(@string)-1)
+		end
+		
+		-- if it is in the table update it
+		if exists (select * from @words where word = @thisword)
+			update @words set wordcount = wordcount+1 where word = @thisword
+		-- otherwise insert it
+		else
+			insert into @words select @thisword, 1
+		
+		set @thisword = ''
+
+	end
+
+	return
+end
+go
+
+select * from WordCountHardWay(' smells  like   spirit  teen   teen , teen  teen spirit     spirit    ')
+order by 1
+go
+
+
+
+Session5LabSolutions.sql
+Displaying Session5LabSolutions.sql.
