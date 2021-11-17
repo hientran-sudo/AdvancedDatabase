@@ -1,0 +1,60 @@
+create or alter procedure SHORTEST_PATH @fromCity varchar(30), @toCity varchar(30)
+as
+    set nocount on
+    if not exists (select * from CITIES where NAME = @fromCity) begin
+        print 'No service is offered from ' + @fromCity + '.'
+        return
+    end
+    if not exists (select * from CITIES where NAME = @toCity) begin
+        print 'No service is offered to ' + @toCity + '.'
+        return
+    end
+    if @toCity = @fromCity begin
+        print 'You can pretty much walk from ' + @fromCity + ' to ' + @toCity + '.'
+        return
+    end
+
+	declare @CityCount int = (select count(*) from cities) -- to stop iteration!
+	declare @shortestPath varchar(max) = '', @shortestPathLength int = 0 
+	;with ReachableCities as (
+		select TO_CITY, 1 HOPS, MILES, 
+		convert(varchar(max), '(' + @fromCity + ') => (' + TO_CITY +')') thePath
+		from ALL_ROUTES where FROM_CITY = @fromCity
+
+		union all
+
+		select A.TO_CITY, R.HOPS+1, R.MILES+A.MILES, 
+		convert(varchar(max), R.thePath + ' => (' + A.TO_CITY + ')')
+		from ReachableCities R, ALL_ROUTES A
+		where R.TO_CITY = A.FROM_CITY
+		and R.HOPS < @CityCount
+		and r.thePath not like '%(' + A.TO_CITY + ')%' -- this is an optimization, and a useful one!
+	)
+	--select @shortestPathLength = count(*) from ReachableCities
+	
+	select @shortestPath = thePath, @shortestPathLength = MILES
+	from ReachableCities
+	where TO_CITY = @toCity
+	and miles = (
+		select min(MILES) from ReachableCities
+		where TO_CITY = @toCity
+	)
+	
+
+    if @shortestPath is not null
+        print 'It is ' + convert(varchar, @shortestPathLength) + ' miles from ' + 
+              @shortestPath
+    else
+        -- this should never happen!
+        print 'No trains exists from ' + @fromCity + ' to ' + @toCity + '.'
+go
+
+--exec SHORTEST_PATH 'New York', 'New York'
+exec SHORTEST_PATH 'New York', 'Los Angeles'
+--exec SHORTEST_PATH 'New York', 'Toledo'
+--exec SHORTEST_PATH 'New York', 'Miami'
+--exec SHORTEST_PATH 'Miami', 'New York'
+--exec SHORTEST_PATH 'Seattle', 'Dallas'
+go
+
+set statistics io off
