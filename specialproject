@@ -1,0 +1,169 @@
+
+/*
+
+* We operate a retail store with 2 large loading bays and two small loading bays
+* Two sizes of trucks may arrive - large trucks and small trucks
+* A large truck must unload in a large bay
+* A small truck may unload in a small bay or a large bay
+* Trucks are generally unloaded in the order they arrive
+* However, if a large bay becomes free, the first waiting large truck should
+  unload there, even if a small truck has been waiting longer.
+* This is a PRIORITY QUEUE 
+
+*/
+
+drop table waiting_trucks
+go
+
+drop table bay
+go
+
+drop table truck
+go
+
+create table truck (
+    id int not null primary key identity,
+    size char(1) check (size in ('L', 'S')),
+    name varchar(100) not null
+)
+go
+
+create table bay (
+    id int not null primary key identity,
+    size char(1) check (size in ('L', 'S')),
+    name varchar(100) not null,
+    truck int null references truck
+)
+go
+
+insert into bay (size, name) select 'L', 'BAY ONE'
+insert into bay (size, name) select 'L', 'BAY TWO'
+insert into bay (size, name) select 'S', 'BAY THREE'
+insert into bay (size, name) select 'S', 'BAY FOUR'
+
+create table waiting_trucks (
+    position int primary key identity,
+    truck int not null references truck
+)
+go
+
+
+
+create or alter procedure get_or_create_truck_id @name varchar(100), @size char(1), @truckId int out
+as begin
+    if not exists (select * from truck where name = @name) 
+        insert into truck (name, size) select @name, @size
+
+    select @truckId = id from truck where name = @name and size = @size
+
+    if @truckId is null begin
+        raiserror ('get_truck_id: truck size mismatch', 16, 1)
+        return
+    end
+end
+go
+
+
+
+create or alter procedure process_waiting_trucks
+as begin
+	-- THIS IS WHERE YOU WRITE YOUR CODE!  Nowhere else, unless you need a function
+	-- Algorithm:
+		-- while there are free small bays and waiting small trucks, move them from the queue into the small bays
+		-- while there are free large bays and waiting large trucks, move them from the queue into the large bays
+		-- while there are free large bays and waiting small trucks, move them from the queue into the large bays
+	-- this should be an ACID TRANSACTION
+
+	select null -- remove this.
+
+end
+go
+
+
+
+create or alter procedure truck_arrives @name varchar(100), @size char(1)
+as begin
+    if @name is null begin
+        raiserror ('truck_arrives: truck must have a name', 16, 1)
+        return
+    end
+
+    if @size not in ('L', 'S') begin
+        raiserror ('truck_arrives: invalid truck size', 16, 1)
+        return
+    end
+
+    declare @truckId int
+    exec get_or_create_truck_id @name, @size, @truckId out
+    if @truckId is null return
+
+    insert into waiting_trucks(truck) select @truckId
+    
+    exec process_waiting_trucks
+end
+go    
+    
+
+
+create or alter procedure truck_leaves @bayName varchar(100)
+as begin
+    declare @bayId int
+    select @bayId = id from bay where name = @bayName
+
+    if @bayId is null begin
+        raiserror ('truck_leaves: invalid bay', 16, 1)
+        return
+    end
+
+    update bay set truck = null where id = @bayId
+
+    exec process_waiting_trucks
+end
+go
+
+
+
+create or alter procedure show_bays_and_queue
+as begin
+    select b.name, b.size, t.name, t.size
+    from bay b left outer join truck t on t.id = b.truck
+    order by b.id asc
+
+    declare @posOffset int
+    select @posOffset = min(position) from waiting_trucks 
+    select w.position - @posOffset, t.name, t.size
+    from waiting_trucks w, truck t
+    where t.id = w.truck
+    order by 1 asc
+end
+go
+
+
+    
+/* test script.
+
+
+exec truck_arrives 'Small Truck 1', 'S'
+exec show_bays_and_queue
+exec truck_arrives 'Large Truck 1', 'L'
+exec show_bays_and_queue
+exec truck_arrives 'Small Truck 2', 'S'
+exec show_bays_and_queue
+exec truck_arrives 'Small Truck 3', 'S'
+exec show_bays_and_queue
+exec truck_arrives 'Small Truck 4', 'S'
+exec show_bays_and_queue
+exec truck_arrives 'Small truck 5', 'S'
+exec show_bays_and_queue
+exec truck_leaves 'BAY THREE'
+exec show_bays_and_queue
+exec truck_arrives 'Large Truck 2', 'L'
+exec show_bays_and_queue
+exec truck_leaves 'BAY TWO'
+exec show_bays_and_queue
+exec truck_leaves 'BAY ONE'
+exec show_bays_and_queue
+
+*/
+SpecialProject.sql
+Displaying SpecialProject.sql.
